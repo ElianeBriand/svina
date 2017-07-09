@@ -1,4 +1,10 @@
-# QuickVina 2
+# SVina
+
+Like QVina/QuickVina 2, with a few added feature for screening.
+
+Below is reproduced the original README of QuickVina 2 :
+
+
 Accurately speed up AutoDock Vina, the famous molecular docking tool.
 
 This is the source code repository and the temporary website until I release a new version and build new nice website.
