@@ -1,0 +1,28 @@
+syntax = "proto2";
+
+package vinabatch;
+
+message Ligand {
+  required string name = 1;
+  required string path = 2;
+  // optional string email = 3;
+
+  }
+
+message Job {
+  repeated Ligand ligands = 1;
+}
+
+message modeSetting{
+    required bool stop = 1;
+}
+
+/** not implemented : on the fly setting change
+message Conf {
+  required string name = 1;
+  required string path = 2;
+  // optional string email = 3;
+
+  }
+  
+  */
