@@ -56,6 +56,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <mpi.h>
+
 
 using boost::filesystem::path;
 using namespace boost::posix_time;
@@ -493,8 +495,8 @@ Thank you!\n";
         bool score_only = false, local_only = false, randomize_only = false, help = false, help_advanced = false, version = false; // FIXME
 
         bool batchMode = false;
-        bool use_fork_parrallelism = false;
-
+        bool use_fork_parallelism = false;
+        bool use_mpi_parallelism = false;
 
         positional_options_description positional; // remains empty
 
@@ -556,8 +558,9 @@ Thank you!\n";
         ("batch", bool_switch(&batchMode), "Run ligand batches without unloading the receptor.")
         ("jobfile", value<std::string>(&job_file), "job file of ligand path to run")
         ("batchoutdir", value<std::string>(&batch_out), "batch output directory")
-        ("fork-parallelism", bool_switch(&use_fork_parrallelism), "use fork in addition to per-process threads")
+        ("fork-parallelism", bool_switch(&use_fork_parallelism), "use fork in addition to per-process threads")
         ("forknbr", value<int>(&forknbr), "number of fork when using fork-based parallelism")
+        ("mpi", bool_switch(&use_mpi_parallelism), "use OpenMPI-based parallelism")
         ;
         options_description desc, desc_config, desc_simple;
         desc       .add(inputs).add(search_area).add(outputs).add(advanced).add(misc).add(config).add(batchmodeopt).add(info);
@@ -714,7 +717,7 @@ Thank you!\n";
 
         }
 
-        if(batchMode == true)
+        if(batchMode == true && use_mpi_parallelism == false)
         {
 
 
@@ -741,20 +744,20 @@ Thank you!\n";
                     printf("End of file\n");
                     std::cout.flush();
                     while(pid_queue.size() != 0)
-                    { 
+                    {
                         wait(&(pid_queue.front()));
                         pid_queue.pop();
                     }
-                    
+
                     break;
                 }
 
                 // get base filename
                 std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
-                random_int(1,100000000,a);
+                random_int(1,100000000,a); // REMOVE ?
                 seed = random_int(1,100000000,a);
 
-                if(use_fork_parrallelism == true)
+                if(use_fork_parallelism == true)
                 {
                     pid_t pid = fork();
 
@@ -815,10 +818,35 @@ Thank you!\n";
                 {
                     break; // exit after completing task
                 }
-                
+
                 i++;
             }
 
+        } else if(batchMode == true && use_mpi_parallelism == true)
+        {
+            // Initialize the MPI environment
+            MPI_Init(NULL, NULL);
+
+            // Get the number of processes
+            int world_size;
+            MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+            // Get the rank of the process
+            int world_rank;
+            MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+
+            // Get the name of the processor
+            char processor_name[MPI_MAX_PROCESSOR_NAME];
+            int name_len;
+            MPI_Get_processor_name(processor_name, &name_len);
+
+            // Print off a hello world message
+            printf("Hello world from processor %s, rank %d"
+                   " out of %d processors\n",
+                   processor_name, world_rank, world_size);
+
+            // Finalize the MPI environment.
+            MPI_Finalize();
 
         } else {
 

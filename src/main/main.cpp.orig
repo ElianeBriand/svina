@@ -18,6 +18,9 @@
            The Olson Lab,
            The Scripps Research Institute
 
+   This file is modified from QuickVina 2
+   Modified by 	Eliane Briand
+
 */
 
 #include <iostream>
@@ -53,6 +56,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <mpi.h>
+
 
 using boost::filesystem::path;
 using namespace boost::posix_time;
@@ -477,6 +482,7 @@ Thank you!\n";
         std::string rigid_name, ligand_name, flex_name, config_name, out_name, log_name, job_file, batch_out;
         fl center_x, center_y, center_z, size_x, size_y, size_z;
         int cpu = 0, seed, exhaustiveness, verbosity = 2, num_modes = 9;
+        int forknbr = 1;
         fl energy_range = 2.0;
 
         // -0.035579, -0.005156, 0.840245, -0.035069, -0.587439, 0.05846
@@ -489,8 +495,8 @@ Thank you!\n";
         bool score_only = false, local_only = false, randomize_only = false, help = false, help_advanced = false, version = false; // FIXME
 
         bool batchMode = false;
-        bool use_fork_parrallelism = false;
-
+        bool use_fork_parallelism = false;
+        bool use_mpi_parallelism = false;
 
         positional_options_description positional; // remains empty
 
@@ -552,7 +558,8 @@ Thank you!\n";
         ("batch", bool_switch(&batchMode), "Run ligand batches without unloading the receptor.")
         ("jobfile", value<std::string>(&job_file), "job file of ligand path to run")
         ("batchoutdir", value<std::string>(&batch_out), "batch output directory")
-        ("fork-parallelism", bool_switch(&use_fork_parrallelism), "use fork in addition to per-process threads")
+        ("fork-parallelism", bool_switch(&use_fork_parallelism), "use fork in addition to per-process threads")
+        ("forknbr", value<int>(&forknbr), "number of fork when using fork-based parallelism")
         ;
         options_description desc, desc_config, desc_simple;
         desc       .add(inputs).add(search_area).add(outputs).add(advanced).add(misc).add(config).add(batchmodeopt).add(info);
@@ -709,7 +716,7 @@ Thank you!\n";
 
         }
 
-        if(batchMode == true)
+        if(batchMode == true && use_mpi_parallelism == false)
         {
 
 
@@ -724,8 +731,9 @@ Thank you!\n";
             std::ifstream infile(job_file.c_str());
 
             int i = 0;
-            int maxNbrOfFork = 4;
-            std::queue<int> pid_queue();
+            int maxNbrOfFork = forknbr;
+            std::queue<int> pid_queue;
+            bool is_a_child_process = false;
             while(true)
             {
                 std::string path;
@@ -734,13 +742,21 @@ Thank you!\n";
                 if (infile.eof() || path == "") {
                     printf("End of file\n");
                     std::cout.flush();
+                    while(pid_queue.size() != 0)
+                    {
+                        wait(&(pid_queue.front()));
+                        pid_queue.pop();
+                    }
+
                     break;
                 }
 
                 // get base filename
                 std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
+                random_int(1,100000000,a); // REMOVE ?
+                seed = random_int(1,100000000,a);
 
-                if(use_fork_parrallelism == true)
+                if(use_fork_parallelism == true)
                 {
                     pid_t pid = fork();
 
@@ -748,13 +764,14 @@ Thank you!\n";
                     {
                         // child process
                         // Continue to the docking procedure
+                        is_a_child_process = true;
                     }
                     else if (pid > 0)
-                    {             
-                        pid_queue.push(pid)
+                    {
+                        pid_queue.push(pid);
                         if(pid_queue.size() >= maxNbrOfFork)
                         {
-                            wait(pid_queue.front());
+                            wait(&(pid_queue.front()));
                             pid_queue.pop();
                         }
                         continue;
@@ -765,10 +782,8 @@ Thank you!\n";
                         printf("\nfork() failed! This should not happen, exiting...\n");
                         return 10;
                     }
-
-                    continue;
                 }
-
+                
                 model* m = new model(templateModel); // Make a copy of the model
 
                 printf("\nDoing ligand number %i (%s)\n",i,base_filename.c_str());
@@ -781,7 +796,6 @@ Thank you!\n";
                     boost::optional<model> ref;
 
 
-                    seed = random_int(1,100000000,a);
 
                     main_procedure(*m, ref,
                                    outname.c_str(),
@@ -792,12 +806,46 @@ Thank you!\n";
                 } catch(...)
                 {
                     printf("\nException caught, moving on to next ligand...\n");
+                    if(is_a_child_process == true)
+                    {
+                        break;
+                    }
                     continue;
                 }
                 delete m;
+                if(is_a_child_process == true)
+                {
+                    break; // exit after completing task
+                }
+
                 i++;
             }
 
+        }else if(batchMode == true && use_mpi_parallelism == true)
+        {
+                    // Initialize the MPI environment
+                    MPI_Init(NULL, NULL);
+
+                    // Get the number of processes
+                    int world_size;
+                    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+                    // Get the rank of the process
+                    int world_rank;
+                    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+
+                    // Get the name of the processor
+                    char processor_name[MPI_MAX_PROCESSOR_NAME];
+                    int name_len;
+                    MPI_Get_processor_name(processor_name, &name_len);
+
+                    // Print off a hello world message
+                    printf("Hello world from processor %s, rank %d"
+                           " out of %d processors\n",
+                           processor_name, world_rank, world_size);
+
+                    // Finalize the MPI environment.
+                    MPI_Finalize();
 
         } else {
 
