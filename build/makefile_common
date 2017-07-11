@@ -4,8 +4,14 @@ SPLITOBJ = split.o
 
 INCFLAGS = -I $(BOOST_INCLUDE) -I/usr/include
 
-MPI_COMPILE_FLAGS = $(shell mpicxx --showme:compile)
-MPI_LINK_FLAGS = $(shell mpicxx --showme:link)
+MPI_COMPILE_FLAGS = -pthread 
+MPI_LINK_FLAGS = -pthread -Wl,-rpath -Wl,/usr/lib64 -Wl,--enable-new-dtags -L/usr/lib64 -lmpi_cxx -lmpi 
+
+#MPI_COMPILE_FLAGS = $(shell mpicxx --showme:compile)
+#MPI_LINK_FLAGS = $(shell mpicxx --showme:link)
+
+#ENDFLAG= -lstdc++ 
+ENDFLAG=  
 
 
 # -pedantic fails on Mac with Boost 1.41 (syntax problems in their headers)
@@ -19,16 +25,16 @@ LIBS = -l boost_system${BOOST_LIB_VERSION} -l boost_thread${BOOST_LIB_VERSION} -
 .SUFFIXES: .cpp  .o 
 
 %.o : ../../../src/lib/%.cpp 
-	$(CC) $(CFLAGS) -o $@ -c $< 
+	$(CC) $(CFLAGS) -o $@ -c $< $(ENDFLAG)
 	
 %.o : ../../../src/design/%.cpp 
-	$(CC) $(CFLAGS) -I ../../../src/lib -o $@ -c $< 
+	$(CC) $(CFLAGS) -I ../../../src/lib -o $@ -c $<  $(ENDFLAG)
 	
 %.o : ../../../src/main/%.cpp 
-	$(CC) $(CFLAGS) -I ../../../src/lib -o $@ -c $< 
+	$(CC) $(CFLAGS) -I ../../../src/lib -o $@ -c $< $(ENDFLAG)
 
 %.o : ../../../src/split/%.cpp 
-	$(CC) $(CFLAGS) -I ../../../src/lib -o $@ -c $< 
+	$(CC) $(CFLAGS) -I ../../../src/lib -o $@ -c $< $(ENDFLAG)
 
 all: vina vina_split
 

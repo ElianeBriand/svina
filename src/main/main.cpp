@@ -562,7 +562,7 @@ Thank you!\n";
         ("batchoutdir", value<std::string>(&batch_out), "batch output directory")
         ("fork-parallelism", bool_switch(&use_fork_parallelism), "use fork in addition to per-process threads")
         ("forknbr", value<int>(&forknbr), "number of fork when using fork-based parallelism")
-        ("mpi", bool_switch(&use_mpi_parallelism), "use OpenMPI-based parallelism")
+        ("mpi", bool_switch(&use_mpi_parallelism), "use OpenMPI-based parallelism (not compatible with forks)")
         ;
         options_description desc, desc_config, desc_simple;
         desc       .add(inputs).add(search_area).add(outputs).add(advanced).add(misc).add(config).add(batchmodeopt).add(info);
@@ -845,7 +845,9 @@ Thank you!\n";
 
                 i++;
             }
-        } else if(batchMode == true && use_mpi_parallelism == true)
+        }
+        
+        if(batchMode == true && use_mpi_parallelism == true)
         {
 
 

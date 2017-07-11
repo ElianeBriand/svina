@@ -1,6 +1,6 @@
 # SVina
 
-Like QVina/QuickVina 2, with a few added feature for screening.
+Like QVina/QuickVina 2, with a few added features for screening.
 
 * Support for various parallelism mechanism for screening
   * Fork +/- thread
