@@ -56,9 +56,13 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <mpi.h>
 
+#ifdef SVINA_ENABLE_MPI
+
+#include <mpi.h>
 #include "vinampi.h"
+
+#endif
 
 using boost::filesystem::path;
 using namespace boost::posix_time;
@@ -562,7 +566,9 @@ Thank you!\n";
         ("batchoutdir", value<std::string>(&batch_out), "batch output directory")
         ("fork-parallelism", bool_switch(&use_fork_parallelism), "use fork in addition to per-process threads")
         ("forknbr", value<int>(&forknbr), "number of fork when using fork-based parallelism")
+#ifdef SVINA_ENABLE_MPI
         ("mpi", bool_switch(&use_mpi_parallelism), "use OpenMPI-based parallelism (not compatible with forks)")
+#endif
         ;
         options_description desc, desc_config, desc_simple;
         desc       .add(inputs).add(search_area).add(outputs).add(advanced).add(misc).add(config).add(batchmodeopt).add(info);
@@ -846,7 +852,7 @@ Thank you!\n";
                 i++;
             }
         }
-        
+#ifdef SVINA_ENABLE_MPI
         if(batchMode == true && use_mpi_parallelism == true)
         {
 
@@ -1090,7 +1096,12 @@ Thank you!\n";
             // MPI : We're done here.
 
 
-        } else {
+        }
+        
+#endif // SVINA_ENABLE_MPI
+
+         if(batchMode == false && use_mpi_parallelism == false)
+         {
 
             doing(verbosity, "Reading input", log);
 
