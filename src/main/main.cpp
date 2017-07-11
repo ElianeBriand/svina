@@ -58,6 +58,7 @@
 #include <sys/wait.h>
 #include <mpi.h>
 
+#include "vinampi.h"
 
 using boost::filesystem::path;
 using namespace boost::posix_time;
@@ -454,6 +455,7 @@ your problem report:\n\
 \n\
 Thank you!\n";
 
+
     const std::string cite_message = "\
 ############################################################################\n\
 # If you used Quick Vina 2 in your work, please cite:                      #\n\
@@ -476,7 +478,7 @@ Thank you!\n";
 # new scoring function, efficient optimization and multithreading,         #\n\
 # Journal of Computational Chemistry 31 (2010) 455-461                     #\n\
 # doi: 10.1002/jcc.21334                                                   #\n\
-############################################################################\n";
+############################################################################\n\n*** This QVina has the screening additions (SVina) ***\n";
 
     try {
         std::string rigid_name, ligand_name, flex_name, config_name, out_name, log_name, job_file, batch_out;
@@ -594,6 +596,12 @@ Thank you!\n";
                 return 1;
             }
         }
+        
+        if(vm.count("batch") > 0)
+        {
+            verbosity = 0;
+        }
+        
         if(help) {
             std::cout << desc_simple << '\n';
             return 0;
@@ -657,8 +665,12 @@ Thank you!\n";
                 throw usage_error("Search space dimensions should be positive");
         }
 
+        if(vm.count("batch") > 0)
+        {
+            printf("\nBATCH MODE - SVINA\nargv[0] : %s\n\n", argv[0]);
+        }else{
         log << cite_message << '\n';
-
+        }
         if(search_box_needed && size_x * size_y * size_z > 27e3) {
             log << "WARNING: The search space volume > 27000 Angstrom^3 (See FAQ)\n";
         }
@@ -722,6 +734,7 @@ Thank you!\n";
 
 
 
+
             rng a;
             doing(verbosity, "Creating template model", log);
 
@@ -735,20 +748,25 @@ Thank you!\n";
             int maxNbrOfFork = forknbr;
             std::queue<int> pid_queue;
             bool is_a_child_process = false;
+
+
             while(true)
             {
+
+
+
+
                 std::string path;
                 std::getline(infile, path);
 
                 if (infile.eof() || path == "") {
                     printf("End of file\n");
                     std::cout.flush();
-                    while(pid_queue.size() != 0)
+                    while(use_fork_parallelism == true &&  pid_queue.size() != 0)
                     {
                         wait(&(pid_queue.front()));
                         pid_queue.pop();
                     }
-
                     break;
                 }
 
@@ -756,6 +774,11 @@ Thank you!\n";
                 std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
                 random_int(1,100000000,a); // REMOVE ?
                 seed = random_int(1,100000000,a);
+
+
+                model* m = new model(templateModel); // Make a copy of the model
+
+
 
                 if(use_fork_parallelism == true)
                 {
@@ -785,7 +808,6 @@ Thank you!\n";
                     }
                 }
 
-                model* m = new model(templateModel); // Make a copy of the model
 
                 printf("\nDoing ligand number %i (%s)\n",i,base_filename.c_str());
                 // Append current ligand
@@ -814,6 +836,8 @@ Thank you!\n";
                     continue;
                 }
                 delete m;
+
+
                 if(is_a_child_process == true)
                 {
                     break; // exit after completing task
@@ -821,32 +845,248 @@ Thank you!\n";
 
                 i++;
             }
-
         } else if(batchMode == true && use_mpi_parallelism == true)
         {
+
+
+            /*
+            // Debugging help : wait until you set i != 0 with gdb, and print PID
+            {
+                int i = 0;
+                char hostname[256];
+                gethostname(hostname, sizeof(hostname));
+                printf("PID %d on %s ready for attach\n", getpid(), hostname);
+                fflush(stdout);
+                while (0 == i)
+                    sleep(5);
+            }
+            //*/
+
             // Initialize the MPI environment
             MPI_Init(NULL, NULL);
+
 
             // Get the number of processes
             int world_size;
             MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
+
+            if(world_size < 2) // Only a governor rank
+            {
+                puts("Cannot use MPI if there is only one rank available. Use fork-based paralellism, or threads; Exiting...");
+                MPI_Finalize();
+                return -1;
+            }
+
+            /* create a type for struct run_param */
+            /*
+            const int nitems=3;
+            int blocklengths[3] = {1,1,1};
+            MPI_Datatype types[3] = {MPI_INT, MPI_INT,MPI_INT};
+            MPI_Datatype mpi_run_param;
+            MPI_Aint     offsets[3];
+            MPI_Aint intex;
+            MPI_Type_extent(MPI_INT,&intex);
+
+            offsets[0] = static_cast<MPI_Aint>(0);
+            offsets[1] = intex;
+            offsets[1] = intex;
+
+            MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_run_param);
+            MPI_Type_commit(&mpi_run_param);
+            */ // Not using custom type because cant make it work, but would be better FIXME
+
+            //Using contiguous integer instead
+            MPI_Datatype mpi_run_param;
+            MPI_Type_contiguous(3, MPI_INT, &mpi_run_param);
+            MPI_Type_commit(&mpi_run_param);
+
+            bool is_mpi_governor = false;
+            bool is_mpi_worker = false;
+
+
+
             // Get the rank of the process
-            int world_rank;
-            MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+            int rank;
+            MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+            if (rank == 0) { // Governor process
+                is_mpi_governor = true;
+            } else { // Worker process
+                is_mpi_worker = true;
+            }
 
-            // Get the name of the processor
-            char processor_name[MPI_MAX_PROCESSOR_NAME];
-            int name_len;
-            MPI_Get_processor_name(processor_name, &name_len);
+            // Define stuff common to governor and worker
 
-            // Print off a hello world message
-            printf("Hello world from processor %s, rank %d"
-                   " out of %d processors\n",
-                   processor_name, world_rank, world_size);
+
+            const int send_data_tag = 13; // Arbitrary value to tag message
+            const int want_data_tag = 13; // Arbitrary value to tag message
+
+
+
+            if(is_mpi_governor == true)
+            {
+                printf("Number of rank : %i\n", world_size);
+
+                rng a;
+
+                std::ifstream infile(job_file.c_str());
+                int count = 0;
+
+                std::vector<struct rank_item> rank_list;
+                for( int i = 0; i < world_size; i++ )
+                {
+                    struct rank_item r;
+                    r.idx = i;
+                    r.r = new int[3];
+                    rank_list.push_back(r);
+                }
+
+                random_int(1,100000000,a); // REMOVE ? Is it really needed to initialize rng ?
+
+                while(true)
+                {
+                    int gseed = random_int(1,100000000,a);
+                    int seek_offset = (int) infile.tellg();
+                    int ligand_nbr = count;
+
+                    // Search for a free worker rank
+                    bool found = false;
+                    int flag;
+                    int recv_processed_counter;
+                    MPI_Status status;
+                    
+                    // Wait for message signaling a worker is ready
+                    MPI_Recv(&recv_processed_counter,1, MPI_INT, MPI_ANY_SOURCE, want_data_tag, MPI_COMM_WORLD, &status);
+
+                    int worker_idx = status.MPI_SOURCE;
+                    
+                    printf("[Governor] RECEIVED request from rank %i (data : %i)\n",
+                           worker_idx,
+                           recv_processed_counter
+                          );
+                    
+                    rank_list[worker_idx].r[0] = gseed;
+                    rank_list[worker_idx].r[1] = seek_offset;
+                    rank_list[worker_idx].r[2] = ligand_nbr;
+                    
+
+                    MPI_Isend(rank_list[worker_idx].r,1,mpi_run_param,worker_idx,send_data_tag,MPI_COMM_WORLD,&(rank_list[worker_idx].request));
+                    printf("[Governor] SENT [%i,%i,%i] to rank %i\n",rank_list[worker_idx].r[0],
+                           rank_list[worker_idx].r[1],
+                           rank_list[worker_idx].r[0],
+                           worker_idx
+                          );
+                    // Search at which seek index does the next line  lies
+                    std::string path;
+                    std::getline(infile, path);
+                    count++;
+
+                    if (infile.eof() || path == "" || path.find_first_not_of(" \t\n\v\f\r") == std::string::npos) {
+                        printf("[Governor] End of batch file\n");
+                        std::cout.flush();
+                        break; // No more data, exit main loop
+                    }
+
+                } // Data-bound while loop
+
+                
+                // No data to feed, now wait for worker to finish
+                int dummy_data;
+                int end_code[3];
+                end_code[1] = -1;
+                for(int j = 1; j < rank_list.size(); j++)
+                {
+                    MPI_Recv(&dummy_data,1, MPI_INT, j, want_data_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Once every worker signals it want data, we're clear
+                    MPI_Send(&end_code,1,mpi_run_param,j,send_data_tag,MPI_COMM_WORLD); // send end signal
+                    delete rank_list[j].r;
+                }
+                delete rank_list[0].r; // Not included in previous loop
+
+
+            } // if(is_mpi_governor == true)
+
+            if(is_mpi_worker == true)
+            {
+                printf("\nInitializing worker rank %i...\n",rank);
+
+                model templateModel = parse_bundle_partial_screening(*rigid_name_opt); // Create a model without appended ligand.
+
+                std::ifstream infile(job_file.c_str());
+                if(infile.is_open() == false)
+                {
+                    puts("Error : infile not open");
+                    return -1;
+                }
+
+                const int governor_rank=0; // Receive from governor rank
+                int local_processed_counter = 0;
+                int recv[3];
+
+
+
+                while(true)
+                {
+                    // Send a message signaling we're ready to process data
+                    MPI_Send(&local_processed_counter,1,MPI_INT,governor_rank,want_data_tag,MPI_COMM_WORLD);
+                    
+                                        
+                    // Receive said data.
+                    MPI_Recv(&recv,1, mpi_run_param, governor_rank, send_data_tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    
+                    if(recv[1] == -1) // Signals ends of processing
+                    {
+                        break;
+                    }
+                    
+                    model* m = new model(templateModel); // Make a copy of the model
+
+
+
+                    infile.seekg(recv[1]);
+
+
+
+                    std::string path;
+                    std::getline(infile, path);
+                    std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
+
+
+                    printf("[Worker][%i] Received ligand (%i,%s)\n",rank,recv[2],base_filename.c_str());
+
+                    // Append current ligand
+                    try {
+                        m->append(parse_ligand_pdbqt(make_path(std::vector<std::string>(1, path)[0])));
+
+                        std::string outname = batch_out + "/" + base_filename + ".out.pdbqt";
+                        boost::optional<model> ref;
+
+                        main_procedure(*m, ref,
+                                       outname.c_str(),
+                                       score_only, local_only, randomize_only, false, // no_cache == false
+                                       gd, exhaustiveness,
+                                       weights,
+                                       cpu, recv[0], verbosity, max_modes_sz, energy_range, log);
+                    } catch(...)
+                    {
+                        printf("\nException caught, moving on to next ligand...\n");
+                        delete m;
+                        local_processed_counter++;
+                        continue;
+                    }
+                    local_processed_counter++;
+                    delete m;
+                } // Data bound main lopp
+
+
+
+            } //  if(is_mpi_worker == true)
+
 
             // Finalize the MPI environment.
             MPI_Finalize();
+
+            // MPI : We're done here.
+
 
         } else {
 
