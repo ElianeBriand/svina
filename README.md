@@ -2,7 +2,15 @@
 
 Like QVina/QuickVina 2, with a few added feature for screening.
 
+* Support for various parallelism mechanism for screening
+  * Fork +/- thread
+  * MPI (tested on OpenMPI)
+* Batch file of ligand to run
+
+
 Below is reproduced the original README of QuickVina 2 :
+
+# QuickVina 2
 
 
 Accurately speed up AutoDock Vina, the famous molecular docking tool.
