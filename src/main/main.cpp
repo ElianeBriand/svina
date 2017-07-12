@@ -19,7 +19,6 @@
            The Scripps Research Institute
 
    This file is modified from QuickVina 2
-   Modified by 	Eliane Briand
 
 */
 
